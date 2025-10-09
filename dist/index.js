@@ -25555,6 +25555,14 @@ module.exports = {
 
 /***/ }),
 
+/***/ 2682:
+/***/ ((module) => {
+
+module.exports = eval("require")("./languages/npm.js");
+
+
+/***/ }),
+
 /***/ 2613:
 /***/ ((module) => {
 
@@ -27489,6 +27497,8 @@ async function publishPythonPackage({ apiToken, hashId, packageDir, failOnConfli
 }
 
 ;// CONCATENATED MODULE: ./src/languages/docker.js
+/* global Buffer */
+
 
 
 
@@ -27526,34 +27536,8 @@ async function publishDockerImage({ apiToken, hashId, registryName, dockerContex
   await exec.exec(`docker push ${taggedImage}`);
 }
 
-// EXTERNAL MODULE: external "fs"
-var external_fs_ = __nccwpck_require__(9896);
-;// CONCATENATED MODULE: ./src/languages/npm.js
-
-
-
-
-
-
-async function publishNpmPackage({ apiToken, hashId, packageDir }) {
-  const absPath = external_path_.resolve(packageDir);
-  const registryUrl = `https://api.repoforge.io/npm/${hashId}/`;
-  const authTokenUrl = `//api.repoforge.io/npm/${hashId}/:_authToken`;
-
-  core.info(`Publishing NPM package from ${absPath}`);
-  core.info(`Using registry: ${registryUrl}`);
-
-  const npmrcContent = `
-@repoforge:registry=${registryUrl}
-${authTokenUrl}=${apiToken}
-`;
-
-  const npmrcPath = external_path_.join(absPath, '.npmrc');
-  (0,external_fs_.writeFileSync)(npmrcPath, npmrcContent.trim());
-
-  await exec.exec('npm publish', [], { cwd: absPath });
-}
-
+// EXTERNAL MODULE: ./node_modules/@vercel/ncc/dist/ncc/@@notfound.js?./languages/npm.js
+var npm = __nccwpck_require__(2682);
 ;// CONCATENATED MODULE: ./src/index.js
 
 
@@ -27568,11 +27552,12 @@ async function run() {
     const packageDir = core.getInput('package_dir', { required: true });
     
     switch (packageType.toLowerCase()) {
-      case 'python':
+      case 'python': {
         const failOnConflict = core.getInput('fail_on_conflict') === 'true';
         await publishPythonPackage({ apiToken, hashId, packageDir, failOnConflict });
         break;
-      case 'docker':
+      }
+      case 'docker': {
         const dockerTag = core.getInput('docker_tag', { required: false });
         const registryName = core.getInput('registry_name', { required: true });
         const dockerContext = core.getInput('docker_context', { required: false });
@@ -27581,11 +27566,15 @@ async function run() {
     
         await publishDockerImage({ apiToken, hashId, registryName, dockerTag, dockerContext, dockerfile, buildArgs });
         break;
-      case 'npm':
-        await publishNpmPackage({ apiToken, hashId, packageDir });
+      }
+      case 'npm': {
+        await (0,npm.publishNpmPackage)({ apiToken, hashId, packageDir });
         break;
-      default:
+      }
+      default: {
         core.setFailed(`Unsupported package_type: ${packageType}`);
+        break;
+      }
     }
   } catch (error) {
     core.setFailed(error.message);
