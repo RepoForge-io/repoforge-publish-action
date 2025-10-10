@@ -10,16 +10,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chris104957/repoforge-publish-action.git"
+    "url": "git+https://github.com/RepoForgeHQ/repoforge-publish-action.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/chris104957/repoforge-publish-action/issues"
+    "url": "https://github.com/RepoForgeHQ/repoforge-publish-action/issues"
   },
-  "homepage": "https://github.com/chris104957/repoforge-publish-action#readme",
+  "homepage": "https://github.com/RepoForgeHQ/repoforge-publish-action#readme",
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/exec": "^1.1.1",

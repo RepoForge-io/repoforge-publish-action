@@ -89,7 +89,7 @@ Create a **new API token** in RepoForge.io settings:
 
 ## 🧪 Usage
 
-For more examples, refer to the repository [here](https://github.com/chris104957/repoforge-publish-action-test)
+For more examples, refer to the repository [here](https://github.com/RepoForgeHQ/repoforge-publish-action-test)
 
 ```yaml
 name: Publish to RepoForge.io
@@ -112,7 +112,7 @@ jobs:
           node-version: 20
 
       - name: Publish package
-        uses: chris104957/repoforge-publish-action@main
+        uses: RepoForgeHQ/repoforge-publish-action@main
         with:
           package_type: python  # or docker / npm
           api_token: ${{ secrets.REPOFORGE_TOKEN }}
@@ -135,7 +135,7 @@ jobs:
 ## 🔗 Links
 
 * 🌐 [RepoForge.io](https://repoforge.io)
-* 🐙 [This GitHub Action](https://github.com/chris104957/repoforge-publish-action)
+* 🐙 [This GitHub Action](https://github.com/RepoForgeHQ/repoforge-publish-action)
 * 📖 [RepoForge.io Documentation](https://help.repoforge.io)
 
 ---
