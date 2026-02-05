@@ -25555,14 +25555,6 @@ module.exports = {
 
 /***/ }),
 
-/***/ 2682:
-/***/ ((module) => {
-
-module.exports = eval("require")("./languages/npm.js");
-
-
-/***/ }),
-
 /***/ 2613:
 /***/ ((module) => {
 
@@ -27536,8 +27528,34 @@ async function publishDockerImage({ apiToken, hashId, registryName, dockerContex
   await exec.exec(`docker push ${taggedImage}`);
 }
 
-// EXTERNAL MODULE: ./node_modules/@vercel/ncc/dist/ncc/@@notfound.js?./languages/npm.js
-var npm = __nccwpck_require__(2682);
+// EXTERNAL MODULE: external "fs"
+var external_fs_ = __nccwpck_require__(9896);
+;// CONCATENATED MODULE: ./src/languages/npm.js
+
+
+
+
+
+
+async function publishNpmPackage({ apiToken, hashId, packageDir }) {
+  const absPath = external_path_.resolve(packageDir);
+  const registryUrl = `https://api.repoforge.io/npm/${hashId}/`;
+  const authTokenUrl = `//api.repoforge.io/npm/${hashId}/:_authToken`;
+
+  core.info(`Publishing NPM package from ${absPath}`);
+  core.info(`Using registry: ${registryUrl}`);
+
+  const npmrcContent = `
+@repoforge:registry=${registryUrl}
+${authTokenUrl}=${apiToken}
+`;
+
+  const npmrcPath = external_path_.join(absPath, '.npmrc');
+  (0,external_fs_.writeFileSync)(npmrcPath, npmrcContent.trim());
+
+  await exec.exec('npm publish', [], { cwd: absPath });
+}
+
 ;// CONCATENATED MODULE: ./src/index.js
 
 
@@ -27568,7 +27586,7 @@ async function run() {
         break;
       }
       case 'npm': {
-        await (0,npm.publishNpmPackage)({ apiToken, hashId, packageDir });
+        await publishNpmPackage({ apiToken, hashId, packageDir });
         break;
       }
       default: {
