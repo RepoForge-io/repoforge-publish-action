@@ -1,6 +1,6 @@
 {
   "name": "repoforge-publish-action",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)",
   "main": "src/index.js",
   "scripts": {

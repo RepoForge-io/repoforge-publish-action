@@ -27556,7 +27556,255 @@ ${authTokenUrl}=${apiToken}
   await exec.exec('npm publish', [], { cwd: absPath });
 }
 
+;// CONCATENATED MODULE: ./src/utils/upload.js
+/* global fetch, FormData, Buffer */
+
+
+
+
+
+function basicAuthHeader(apiToken) {
+  return `Basic ${Buffer.from(`__token__:${apiToken}`).toString('base64')}`;
+}
+
+// Recursively finds files in `dir` whose names end with one of `extensions`
+function findFiles(dir, extensions) {
+  const absDir = external_path_.resolve(dir);
+  let stat;
+  try {
+    stat = (0,external_fs_.statSync)(absDir);
+  } catch {
+    throw new Error(`Package directory ${absDir} does not exist.`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`Package directory ${absDir} is not a directory.`);
+  }
+
+  const found = [];
+  const walk = (current) => {
+    for (const entry of (0,external_fs_.readdirSync)(current, { withFileTypes: true })) {
+      const entryPath = external_path_.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(entryPath);
+      } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
+        found.push(entryPath);
+      }
+    }
+  };
+  walk(absDir);
+
+  if (found.length === 0) {
+    throw new Error(`No ${extensions.join(' / ')} files found in ${absDir}.`);
+  }
+  return found.sort();
+}
+
+// Uploads a single file as multipart form data, returning the response status and body
+async function uploadFile({ url, apiToken, field, filePath }) {
+  const form = new FormData();
+  form.append(field, await (0,external_fs_.openAsBlob)(filePath), external_path_.basename(filePath));
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: basicAuthHeader(apiToken) },
+    body: form,
+  });
+  return { status: response.status, ok: response.ok, body: await response.text() };
+}
+
+// Extracts the `detail` message from a FastAPI error body, falling back to the raw body
+function errorDetail(body) {
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed.detail === 'string') return parsed.detail;
+  } catch {
+    // not JSON
+  }
+  return body;
+}
+
+// Shared handling for a file whose version already exists in RepoForge
+function handleConflict(fileName, failOnConflict) {
+  const msg = `${fileName}: version already exists.`;
+  if (failOnConflict) {
+    core.setFailed(`${msg} Failing as per configuration.`);
+    return false;
+  }
+  core.warning(`${msg} Skipping upload.`);
+  return true;
+}
+
+;// CONCATENATED MODULE: ./src/languages/conda.js
+/* global fetch */
+
+
+
+
+
+// Used to check for existing packages when the file isn't inside a <subdir>/ directory
+const KNOWN_SUBDIRS = [
+  'noarch',
+  'linux-64',
+  'linux-aarch64',
+  'linux-ppc64le',
+  'linux-s390x',
+  'osx-64',
+  'osx-arm64',
+  'win-64',
+  'win-arm64',
+];
+const SUBDIR_PATTERN = /^(noarch|[a-z]+-[a-z0-9_]+)$/;
+
+function describeError(status, body, channelName) {
+  switch (status) {
+    case 401:
+      return 'Authentication failed. Check that api_token is a valid RepoForge API token.';
+    case 403:
+      return 'Not authorized. The API token needs the "Conda - Full access" role.';
+    case 404:
+      return `Channel \`${channelName}\` doesn't exist in RepoForge. Create it first.`;
+    default:
+      return `HTTP ${status}: ${errorDetail(body)}`;
+  }
+}
+
+async function publishCondaPackage({ apiToken, hashId, channelName, packageDir, failOnConflict }) {
+  if (!channelName) {
+    core.setFailed('Input "channel_name" is required for Conda publishing.');
+    return;
+  }
+
+  const channelUrl = `https://api.repoforge.io/conda/${hashId}/${encodeURIComponent(channelName)}/`;
+  const files = findFiles(packageDir, ['.conda', '.tar.bz2']);
+
+  core.info(`Publishing ${files.length} Conda package(s) to channel "${channelName}"`);
+
+  // repodata.json per subdir, fetched lazily and shared between files
+  const repoData = new Map();
+  const getRepoData = async (subdir) => {
+    if (!repoData.has(subdir)) {
+      const response = await fetch(`${channelUrl}${subdir}/repodata.json`, {
+        headers: { Authorization: basicAuthHeader(apiToken) },
+      });
+      repoData.set(subdir, response.ok ? await response.json() : null);
+    }
+    return repoData.get(subdir);
+  };
+
+  const alreadyExists = async (filePath) => {
+    const fileName = external_path_.basename(filePath);
+    const parent = external_path_.basename(external_path_.dirname(filePath));
+    const subdirs = SUBDIR_PATTERN.test(parent) ? [parent] : KNOWN_SUBDIRS;
+    for (const subdir of subdirs) {
+      const data = await getRepoData(subdir);
+      if (data?.packages?.[fileName]) return true;
+    }
+    return false;
+  };
+
+  for (const filePath of files) {
+    const fileName = external_path_.basename(filePath);
+
+    if (await alreadyExists(filePath)) {
+      if (handleConflict(fileName, failOnConflict)) continue;
+      return;
+    }
+
+    const { ok, status, body } = await uploadFile({ url: channelUrl, apiToken, field: 'file', filePath });
+    if (!ok) {
+      core.setFailed(`${fileName}: upload failed. ${describeError(status, body, channelName)}`);
+      return;
+    }
+    core.info(`${fileName}: uploaded`);
+  }
+}
+
+;// CONCATENATED MODULE: ./src/languages/debian.js
+/* global fetch */
+
+
+
+
+
+
+function debian_describeError(status, body) {
+  switch (status) {
+    case 401:
+      return 'Authentication failed. Check that api_token is a valid RepoForge API token.';
+    case 403:
+      return 'Not authorized. The API token needs the "Debian - Full access" role.';
+    case 500:
+      return `HTTP 500: ${errorDetail(body)}. Check that the file is a valid .deb package.`;
+    default:
+      return `HTTP ${status}: ${errorDetail(body)}`;
+  }
+}
+
+// Reads Package, Version and Architecture from a .deb. Returns null if dpkg-deb isn't installed.
+async function readControlFields(filePath) {
+  let result;
+  try {
+    result = await exec.getExecOutput('dpkg-deb', ['-f', filePath, 'Package', 'Version', 'Architecture'], {
+      silent: true,
+      ignoreReturnCode: true,
+    });
+  } catch {
+    return null;
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(`${external_path_.basename(filePath)} is not a valid Debian package: ${result.stderr.trim()}`);
+  }
+  const fields = {};
+  for (const line of result.stdout.split('\n')) {
+    const [key, ...rest] = line.split(':');
+    if (key) fields[key.trim().toLowerCase()] = rest.join(':').trim();
+  }
+  return fields;
+}
+
+async function publishDebianPackage({ apiToken, hashId, packageDir, failOnConflict }) {
+  const baseUrl = `https://api.repoforge.io/debian/${hashId}/`;
+  const files = findFiles(packageDir, ['.deb']);
+
+  core.info(`Publishing ${files.length} Debian package(s)`);
+
+  // RepoForge keeps one version per package and architecture, so compare against that
+  const alreadyExists = async (filePath) => {
+    const fields = await readControlFields(filePath);
+    if (!fields) {
+      core.warning('dpkg-deb not found, so existing versions can\'t be checked. Uploads will overwrite them.');
+      return false;
+    }
+    const { package: name, version, architecture } = fields;
+    const response = await fetch(
+      `${baseUrl}dists/${encodeURIComponent(name)}/main/binary-${encodeURIComponent(architecture)}/Packages`,
+      { headers: { Authorization: basicAuthHeader(apiToken) } },
+    );
+    if (!response.ok) return false;
+    const match = (await response.text()).match(/^Version:\s*(.+)$/m);
+    return match?.[1].trim() === version;
+  };
+
+  for (const filePath of files) {
+    const fileName = external_path_.basename(filePath);
+
+    if (await alreadyExists(filePath)) {
+      if (handleConflict(fileName, failOnConflict)) continue;
+      return;
+    }
+
+    const { ok, status, body } = await uploadFile({ url: baseUrl, apiToken, field: 'content', filePath });
+    if (!ok) {
+      core.setFailed(`${fileName}: upload failed. ${debian_describeError(status, body)}`);
+      return;
+    }
+    core.info(`${fileName}: uploaded`);
+  }
+}
+
 ;// CONCATENATED MODULE: ./src/index.js
+
+
 
 
 
@@ -27587,6 +27835,17 @@ async function run() {
       }
       case 'npm': {
         await publishNpmPackage({ apiToken, hashId, packageDir });
+        break;
+      }
+      case 'conda': {
+        const channelName = core.getInput('channel_name');
+        const failOnConflict = core.getInput('fail_on_conflict') === 'true';
+        await publishCondaPackage({ apiToken, hashId, channelName, packageDir, failOnConflict });
+        break;
+      }
+      case 'debian': {
+        const failOnConflict = core.getInput('fail_on_conflict') === 'true';
+        await publishDebianPackage({ apiToken, hashId, packageDir, failOnConflict });
         break;
       }
       default: {

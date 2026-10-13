@@ -2,6 +2,8 @@ import * as core from '@actions/core';
 import { publishPythonPackage } from './languages/python.js';
 import { publishDockerImage } from './languages/docker.js';
 import { publishNpmPackage } from './languages/npm.js';
+import { publishCondaPackage } from './languages/conda.js';
+import { publishDebianPackage } from './languages/debian.js';
 
 async function run() {
   try {
@@ -28,6 +30,17 @@ async function run() {
       }
       case 'npm': {
         await publishNpmPackage({ apiToken, hashId, packageDir });
+        break;
+      }
+      case 'conda': {
+        const channelName = core.getInput('channel_name');
+        const failOnConflict = core.getInput('fail_on_conflict') === 'true';
+        await publishCondaPackage({ apiToken, hashId, channelName, packageDir, failOnConflict });
+        break;
+      }
+      case 'debian': {
+        const failOnConflict = core.getInput('fail_on_conflict') === 'true';
+        await publishDebianPackage({ apiToken, hashId, packageDir, failOnConflict });
         break;
       }
       default: {
