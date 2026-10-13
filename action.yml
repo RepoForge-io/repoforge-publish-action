@@ -1,5 +1,5 @@
 name: 'RepoForge Publish'
-description: 'Publish Python, Docker or NPM packages to RepoForge from GitHub Actions'
+description: "Publish private Python packages from GitHub Actions (GitHub Packages doesn't support PyPI). Also Docker, npm, Conda, Debian."
 inputs:
   # core inputs
   package_type:
@@ -10,24 +10,31 @@ inputs:
       - python
       - docker
       - npm
+      - conda
+      - debian
   api_token:
-    description: 'API token for RepoForge. Must have upload permissions for Python.'
+    description: 'API token for RepoForge. Must have full access for the package type being published.'
     required: true
   hash_id:
     description: 'RepoForge hash ID'
     required: true
  
-  # package dir is used by both python and npm
+  # package dir is used by python, npm, conda and debian
   package_dir:
     description: 'Path to the directory containing the package'
     default: './dist'
     required: false
 
-  # python inputs
+  # python, conda and debian inputs
   fail_on_conflict:
-    description: 'Whether to fail the build on HTTP 409 (version conflict)'
+    description: 'Whether to fail the build if the package version already exists'
     required: false
     default: 'false'
+
+  # conda inputs
+  channel_name:
+    description: 'Conda channel to upload to. Must already exist in RepoForge. Required where package_type=conda'
+    required: false
 
   # docker inputs
   docker_context:

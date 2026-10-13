@@ -1,0 +1,12 @@
+context:
+  version: ${{ env.get("PKG_VERSION") }}
+
+package:
+  name: repoforge-action-test
+  version: ${{ version }}
+
+build:
+  noarch: generic
+  script:
+    - mkdir -p $PREFIX/share/repoforge-action-test
+    - echo hello > $PREFIX/share/repoforge-action-test/hello.txt

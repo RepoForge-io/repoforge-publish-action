@@ -1,0 +1,131 @@
+name: Publish Test
+
+# Publishes to a test RepoForge account. Needs these repository secrets:
+#   REPOFORGE_TEST_TOKEN       token with Conda - Full access and Debian - Full access
+#   REPOFORGE_TEST_HASH_ID     hash ID of the test account
+#   REPOFORGE_TEST_CHANNEL     an existing Conda channel in the test account
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PKG_VERSION: 0.0.${{ github.run_number }}.${{ github.run_attempt }}
+
+jobs:
+  conda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build action
+        run: npm ci && npm run build
+
+      - name: Build Conda package
+        run: |
+          curl -fsSL -o /usr/local/bin/rattler-build \
+            https://github.com/prefix-dev/rattler-build/releases/latest/download/rattler-build-x86_64-unknown-linux-musl
+          chmod +x /usr/local/bin/rattler-build
+          rattler-build build --recipe test/conda/recipe.yaml --output-dir out
+
+      - name: Publish
+        uses: ./
+        with:
+          package_type: conda
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./out
+          channel_name: ${{ secrets.REPOFORGE_TEST_CHANNEL }}
+
+      - name: Publish again (skips existing version)
+        uses: ./
+        with:
+          package_type: conda
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./out
+          channel_name: ${{ secrets.REPOFORGE_TEST_CHANNEL }}
+
+      - name: Publish again with fail_on_conflict
+        id: conflict
+        continue-on-error: true
+        uses: ./
+        with:
+          package_type: conda
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./out
+          channel_name: ${{ secrets.REPOFORGE_TEST_CHANNEL }}
+          fail_on_conflict: true
+
+      - name: Publish to a missing channel
+        id: missing_channel
+        continue-on-error: true
+        uses: ./
+        with:
+          package_type: conda
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./out
+          channel_name: does-not-exist-${{ github.run_id }}
+
+      - name: Check expected failures
+        run: |
+          test "${{ steps.conflict.outcome }}" = failure
+          test "${{ steps.missing_channel.outcome }}" = failure
+
+  debian:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build action
+        run: npm ci && npm run build
+
+      - name: Build Debian package
+        run: |
+          mkdir -p pkg/DEBIAN pkg/usr/share/repoforge-action-test out
+          echo hello > pkg/usr/share/repoforge-action-test/hello.txt
+          cat > pkg/DEBIAN/control <<CONTROL
+          Package: repoforge-action-test
+          Version: ${PKG_VERSION}
+          Architecture: all
+          Maintainer: RepoForge.io <support@repoforge.io>
+          Description: Test package for repoforge-publish-action
+          CONTROL
+          dpkg-deb --build pkg out/repoforge-action-test_${PKG_VERSION}_all.deb
+
+      - name: Publish
+        uses: ./
+        with:
+          package_type: debian
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./out
+
+      - name: Publish again with fail_on_conflict
+        id: conflict
+        continue-on-error: true
+        uses: ./
+        with:
+          package_type: debian
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./out
+          fail_on_conflict: true
+
+      - name: Create an invalid package
+        run: mkdir invalid && echo "not a package" > invalid/bogus.deb
+
+      - name: Publish an invalid package
+        id: invalid_upload
+        uses: ./
+        continue-on-error: true
+        with:
+          package_type: debian
+          api_token: ${{ secrets.REPOFORGE_TEST_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_TEST_HASH_ID }}
+          package_dir: ./invalid
+
+      - name: Check expected failures
+        run: |
+          test "${{ steps.conflict.outcome }}" = failure
+          test "${{ steps.invalid_upload.outcome }}" = failure

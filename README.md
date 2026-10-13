@@ -5,9 +5,7 @@
 
 ![RepoForge.io logo](./img/logo.png)
 
-**GitHub Action to publish Python, Docker, and NPM packages to [RepoForge.io](https://repoforge.io)**
-
-Supports future extensibility (Conda, Debian coming soon).
+**GitHub Packages doesn't support Python packages. This action publishes them, along with Docker images, npm, Conda and Debian packages, to a private [RepoForge.io](https://repoforge.io) registry, so you can host and install private Python packages from GitHub.**
 
 ## 📦 About RepoForge.io
 
@@ -25,8 +23,8 @@ Supports future extensibility (Conda, Debian coming soon).
 | Python       | ✅          | Upload `.tar.gz` / `.whl` using Twine |
 | Docker       | ✅          | Authenticated push to RepoForge.io container registry |
 | NPM          | ✅          | Scoped NPM publishing with token-based auth |
-| Conda        | 🔜          | Coming soon |
-| Debian       | 🔜          | Coming soon |
+| Conda        | ✅          | Upload pre-built `.conda` / `.tar.bz2` files to a channel |
+| Debian       | ✅          | Upload pre-built `.deb` files |
 
 
 
@@ -38,7 +36,7 @@ Inputs vary based on the selected `package_type`.
 
 | Name         | Required | Description |
 |--------------|----------|-------------|
-| `package_type` | ✅ | `python`, `docker`, or `npm` |
+| `package_type` | ✅ | `python`, `docker`, `npm`, `conda` or `debian` |
 | `api_token`  | ✅ | Access token from RepoForge.io (must have upload/write permissions for selected type) |
 | `hash_id`    | ✅ | Your RepoForge.io account hash ID (used in URLs) |
 
@@ -66,7 +64,30 @@ Inputs vary based on the selected `package_type`.
 
 | Name         | Required | Description |
 |--------------|----------|-------------|
-| `package_dir` | ❌ | Path to your NPM package directory (default: `"./npm"`) |
+| `package_dir` | ❌ | Path to your NPM package directory (default: `"./dist"`) |
+
+---
+
+### Conda Inputs
+
+The action uploads pre-built packages, so build them in an earlier step (e.g. with `rattler-build` or `conda-build`).
+
+| Name         | Required | Description |
+|--------------|----------|-------------|
+| `channel_name` | ✅ when `package_type=conda` | Conda channel to upload to. It must already exist in RepoForge.io |
+| `package_dir` | ❌ | Directory containing `.conda` / `.tar.bz2` files, searched recursively so `noarch/` and `linux-64/` subdirectories work (default: `./dist`) |
+| `fail_on_conflict` | ❌ | Whether to fail if the package already exists in the channel. If `false`, existing packages are skipped (default: `false`) |
+
+---
+
+### Debian Inputs
+
+The action uploads pre-built packages, so build them in an earlier step (e.g. with `dpkg-deb` or `nfpm`).
+
+| Name         | Required | Description |
+|--------------|----------|-------------|
+| `package_dir` | ❌ | Directory containing `.deb` files, searched recursively (default: `./dist`) |
+| `fail_on_conflict` | ❌ | Whether to fail if the same version of the package and architecture already exists. If `false`, it is skipped (default: `false`) |
 
 ---
 
@@ -84,6 +105,8 @@ Create a **new API token** in RepoForge.io settings:
 - For Docker: enable "Docker - Full access"
 - For Python: enable "Python - Full access"
 - For NPM: enable "NPM - Full access"
+- For Conda: enable "Conda - Full access"
+- For Debian: enable "Debian - Full access"
 
 ![Access Token Screenshot](./img/api-token.png)
 
@@ -104,21 +127,105 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Use Node
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: 20
+          python-version: '3.12'
+
+      - name: Build
+        run: |
+          pip install build twine
+          python -m build
 
       - name: Publish package
-        uses: RepoForge-io/repoforge-publish-action@main
+        uses: RepoForge-io/repoforge-publish-action@v1
         with:
-          package_type: python  # or docker / npm
+          package_type: python
           api_token: ${{ secrets.REPOFORGE_TOKEN }}
           hash_id: ${{ secrets.REPOFORGE_HASH_ID }}
           package_dir: ./dist
-````
+```
+
+### Conda
+
+```yaml
+      - name: Build
+        run: rattler-build build --recipe recipe/ --output-dir dist
+
+      - uses: RepoForge-io/repoforge-publish-action@v1
+        with:
+          package_type: conda
+          api_token: ${{ secrets.REPOFORGE_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_HASH_ID }}
+          channel_name: my-channel
+          package_dir: ./dist
+```
+
+### Debian
+
+```yaml
+      - name: Build
+        run: dpkg-deb --build my-package dist/my-package_1.0.0_amd64.deb
+
+      - uses: RepoForge-io/repoforge-publish-action@v1
+        with:
+          package_type: debian
+          api_token: ${{ secrets.REPOFORGE_TOKEN }}
+          hash_id: ${{ secrets.REPOFORGE_HASH_ID }}
+          package_dir: ./dist
+```
+
+---
+
+## 📥 Installing your package
+
+Installs use the same repository URL shown in the Hash ID screenshot above, authenticated with an API token: any username, with the token as the password. Use a read-only token (e.g. "Python - Read only") for installs.
+
+### pip
+
+```bash
+pip install your-package \
+  --index-url https://token:${REPOFORGE_TOKEN}@api.repoforge.io/<hash_id>/
+```
+
+### uv
+
+In `pyproject.toml`:
+
+```toml
+[[tool.uv.index]]
+name = "repoforge"
+url = "https://api.repoforge.io/<hash_id>/"
+```
+
+Then provide the credentials through the environment:
+
+```bash
+export UV_INDEX_REPOFORGE_USERNAME=token
+export UV_INDEX_REPOFORGE_PASSWORD=$REPOFORGE_TOKEN
+```
+
+### Poetry
+
+```bash
+poetry source add --priority=supplemental repoforge https://api.repoforge.io/<hash_id>/
+poetry config http-basic.repoforge token $REPOFORGE_TOKEN
+```
+
+### In another workflow
+
+```yaml
+      - name: Install dependencies
+        env:
+          REPOFORGE_TOKEN: ${{ secrets.REPOFORGE_READ_TOKEN }}
+        run: |
+          pip install -r requirements.txt \
+            --index-url https://token:${REPOFORGE_TOKEN}@api.repoforge.io/<hash_id>/
+```
+
+For installing Docker, npm, Conda and Debian packages, see the [RepoForge.io documentation](https://help.repoforge.io).
 
 ---
 
@@ -127,8 +234,8 @@ jobs:
 * [x] Python (twine)
 * [x] Docker (OCI image push)
 * [x] NPM (scoped package)
-* [ ] Conda (coming soon)
-* [ ] Debian (coming soon)
+* [x] Conda (pre-built packages)
+* [x] Debian (pre-built packages)
 
 ---
 
@@ -137,6 +244,8 @@ jobs:
 * 🌐 [RepoForge.io](https://repoforge.io)
 * 🐙 [This GitHub Action](https://github.com/RepoForge-io/repoforge-publish-action)
 * 📖 [RepoForge.io Documentation](https://help.repoforge.io)
+
+New to RepoForge? [Start a 14-day free trial](https://app.repoforge.io/registration/signup), no card needed.
 
 ---
 
