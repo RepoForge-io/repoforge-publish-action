@@ -1,0 +1,27 @@
+name: Update major version tag
+
+# Moves the major tag (e.g. v1) to each new release, so `@v1` always
+# points at the latest v1.x.y.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move major tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Skipping: $TAG is not a vX.Y.Z release"
+            exit 0
+          fi
+          MAJOR="v${BASH_REMATCH[1]}"
+          git tag -f "$MAJOR" "$TAG"
+          git push -f origin "refs/tags/$MAJOR"
