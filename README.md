@@ -5,7 +5,7 @@
 
 ![RepoForge.io logo](./img/logo.png)
 
-**GitHub Packages doesn't support Python packages. This action publishes them, along with Docker images, npm, Conda and Debian packages, to a private [RepoForge.io](https://repoforge.io) registry, so you can host and install private Python packages from GitHub.**
+**[GitHub Packages doesn't support Python packages](https://repoforge.io/blog/posts/github-packages-python/). This action publishes them, along with Docker images, npm, Conda and Debian packages, to a private [RepoForge.io](https://repoforge.io) registry, so you can host and install private Python packages from GitHub.**
 
 ## 📦 About RepoForge.io
 
