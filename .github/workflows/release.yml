@@ -1,0 +1,45 @@
+name: Release
+
+# Pushing a vX.Y.Z tag creates the GitHub release and moves the major tag
+# (e.g. v1). Releases created here use GITHUB_TOKEN, which doesn't trigger
+# update-major-tag.yml, so the major tag is moved in this workflow too.
+#
+# Marketplace listings can only be updated from the web UI: after this runs,
+# edit the release and tick "Publish this release to the GitHub Marketplace".
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches package.json
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match package.json version $VERSION"
+            exit 1
+          fi
+
+      - name: Check dist is up to date
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code dist || (echo "dist is out of date; run npm run build and commit" && exit 1)
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+
+      - name: Move major tag
+        run: |
+          MAJOR="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$MAJOR" "$GITHUB_REF_NAME"
+          git push -f origin "refs/tags/$MAJOR"
