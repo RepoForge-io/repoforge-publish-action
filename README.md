@@ -42,6 +42,8 @@ Inputs vary based on the selected `package_type`.
 
 ### Python Inputs
 
+The action uploads pre-built distributions with [twine](https://twine.readthedocs.io/), installing it with `pip` if it isn't already available to the `python` on `PATH`.
+
 | Name         | Required | Description |
 |--------------|----------|-------------|
 | `package_dir` | ❌ | Directory containing Python build artifacts (default: `./dist`) |
@@ -136,7 +138,7 @@ jobs:
 
       - name: Build
         run: |
-          pip install build twine
+          pip install build
           python -m build
 
       - name: Publish package

@@ -2,7 +2,21 @@ import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import path from 'path';
 
+// Makes sure twine is importable by the `python` on PATH, installing it if needed
+async function ensureTwine() {
+  const exitCode = await exec.exec('python', ['-m', 'twine', '--version'], {
+    silent: true,
+    ignoreReturnCode: true,
+  });
+  if (exitCode === 0) return;
+
+  core.info('twine is not installed; installing it with pip');
+  await exec.exec('python', ['-m', 'pip', 'install', '--quiet', 'twine']);
+}
+
 export async function publishPythonPackage({ apiToken, hashId, packageDir, failOnConflict }) {
+  await ensureTwine();
+
   const uploadUrl = `https://api.repoforge.io/${hashId}/`;
   const absPath = path.resolve(packageDir);
 
